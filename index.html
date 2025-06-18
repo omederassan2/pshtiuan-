@@ -1,4 +1,3 @@
-<!-- الكود HTML كاملًا مع التعديلات المطلوبة -->
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -48,6 +47,10 @@
       border-radius: 8px;
       font-size: 14px;
       box-sizing: border-box;
+    }
+
+    input[readonly] {
+      background-color: #eee;
     }
 
     button {
@@ -144,17 +147,17 @@
 
     <div class="form-group">
       <label for="usd">قبض دولار ($):</label>
-      <input type="number" id="usd" placeholder="المبلغ بالدولار">
+      <input type="tel" id="usd" placeholder="المبلغ بالدولار" step="0.01" min="0" pattern="[0-9]*" inputmode="decimal" />
     </div>
 
     <div class="form-group">
       <label for="iqd">قبض دينار (IQD):</label>
-      <input type="number" id="iqd" placeholder="المبلغ بالدينار">
+      <input type="tel" id="iqd" placeholder="المبلغ بالدينار" step="1" min="0" pattern="[0-9]*" inputmode="numeric" />
     </div>
 
     <div class="form-group">
       <label for="exchangeRate">سعر الصرف:</label>
-      <input type="number" id="exchangeRate" placeholder="سعر الدولار مقابل الدينار">
+      <input type="number" id="exchangeRate" placeholder="سعر الدولار مقابل الدينار" readonly>
     </div>
 
     <button id="submitBtn" onclick="validateAndSubmit()">تۆمارکردنی پسوڵەکە</button>
@@ -170,6 +173,9 @@
   <script>
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHY9_cYmzjrKtj-UvEP7W_C25hl7wZ-42fREGLCyhyGOFBRx1Zp_Xog2uP2ebpSceI/exec';
     const EXTERNAL_SHEET_URL = '';
+    const EXCHANGE_RATE_URL = 'https://script.google.com/macros/s/AKfycbzAvk87pUPqPzrnlcyXk7VfaT5Kk4pzeW2M-SD-2XxVhudmNG8vRJ-IgK7hJt89LBif/exec';
+
+    let currentExchangeRate = 0;
 
     const daysArabic = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
     document.getElementById('todayDay').textContent = daysArabic[new Date().getDay()];
@@ -177,35 +183,27 @@
     document.getElementById('amountSelect').addEventListener('change', loadAmounts);
 
     async function loadClients() {
-  try {
-    // أولاً: نحمل سندات اليوم
-    const receiptResponse = await fetch(`${GOOGLE_SCRIPT_URL}?action=getTodayReceipts`);
-    const receiptData = await receiptResponse.json();
-    const todayClientNames = receiptData.map(entry => entry.client.split('-')[0].trim());
+      try {
+        const receiptResponse = await fetch(`${GOOGLE_SCRIPT_URL}?action=getTodayReceipts`);
+        const receiptData = await receiptResponse.json();
+        const todayClientNames = receiptData.map(entry => entry.client.split('-')[0].trim());
 
-    // بعدها: نحمل العملاء
-    const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getClients`);
-    const clientsData = await response.json();
-    const select = document.getElementById('clientSelect');
-    select.innerHTML = '<option value="">مشتەری هەڵبژێرە...</option>';
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getClients`);
+        const clientsData = await response.json();
+        const select = document.getElementById('clientSelect');
+        select.innerHTML = '<option value="">مشتەری هەڵبژێرە...</option>';
 
-    clientsData.forEach(client => {
-      const nameOnly = client.name.split('-')[0].trim();
-      const option = document.createElement('option');
-      option.value = client.name;
-
-      if (todayClientNames.includes(nameOnly)) {
-        option.textContent = `✅ ${client.name}`;
-      } else {
-        option.textContent = client.name;
+        clientsData.forEach(client => {
+          const nameOnly = client.name.split('-')[0].trim();
+          const option = document.createElement('option');
+          option.value = client.name;
+          option.textContent = todayClientNames.includes(nameOnly) ? '✅ ' + client.name : client.name;
+          select.appendChild(option);
+        });
+      } catch (error) {
+        showMessage('فشل في تحميل العملاء أو سندات اليوم', 'error');
       }
-
-      select.appendChild(option);
-    });
-  } catch (error) {
-    showMessage('فشل في تحميل العملاء أو سندات اليوم', 'error');
-  }
-}
+    }
 
     async function loadTodayReceipts() {
       try {
@@ -240,13 +238,38 @@
       }
     }
 
+    async function loadExchangeRate() {
+      try {
+        const response = await fetch(EXCHANGE_RATE_URL);
+        const data = await response.json();
+        currentExchangeRate = parseFloat(data.rate);
+        document.getElementById('exchangeRate').value = currentExchangeRate;
+      } catch (error) {
+        showMessage('فشل في تحميل سعر الصرف', 'error');
+      }
+    }
+
+    document.getElementById('usd').addEventListener('input', function () {
+      const usd = parseFloat(this.value);
+      if (!isNaN(usd) && currentExchangeRate > 0) {
+        document.getElementById('iqd').value = Math.round(usd * currentExchangeRate);
+      }
+    });
+
+    document.getElementById('iqd').addEventListener('input', function () {
+      const iqd = parseFloat(this.value);
+      if (!isNaN(iqd) && currentExchangeRate > 0) {
+        document.getElementById('usd').value = (iqd / currentExchangeRate).toFixed(2);
+      }
+    });
+
     async function validateAndSubmit() {
       const submitBtn = document.getElementById('submitBtn');
       submitBtn.disabled = true;
       submitBtn.textContent = 'جارٍ الإرسال...';
 
       let clientFull = document.getElementById('clientSelect').value;
-      let client = clientFull.split('-')[0].trim();  // الاسم فقط بدون الرقم
+      let client = clientFull.split('-')[0].trim();
       const note = document.getElementById('note').value;
       const usd = document.getElementById('usd').value;
       const iqd = document.getElementById('iqd').value;
@@ -278,7 +301,7 @@
         showMessage('پسوڵەکە بە سەرکەوتوویی تۆمار کراوە.', 'success');
         resetForm();
         loadTodayReceipts();
-        loadClients(); // إعادة تحميل العملاء بعد الإرسال للتحديث
+        loadClients();
       } catch (error) {
         showMessage('فشل في الإرسال', 'error');
       } finally {
@@ -291,7 +314,6 @@
       document.getElementById('clientSelect').value = '';
       document.getElementById('usd').value = '';
       document.getElementById('iqd').value = '';
-      document.getElementById('exchangeRate').value = '';
       document.getElementById('note').value = '';
     }
 
@@ -306,6 +328,7 @@
       loadTodayReceipts();
       loadClients();
       loadAmounts();
+      loadExchangeRate();
     };
   </script>
 </body>
